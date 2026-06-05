@@ -1,4 +1,0 @@
-Olá {nome}!
-Estamos com a vaga de *{vaga}* em aberto e achamos seu perfil interessante!
-Se quiser saber mais, acesse: {link}
-Estamos à disposição!

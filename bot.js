@@ -1,6 +1,6 @@
 const venom = require("venom-bot");
-const XLSX = require("xlsx");
 const fs = require("fs");
+const path = require("path");
 
 venom.create({
   session: "session1",
@@ -14,10 +14,9 @@ venom.create({
     log("Sessão criada. Aguardando conexão real...");
     esperarClientPronto(client);
     
-    // Encerra e limpa quando fechar o bot (Ctrl+C)
+    // Encerra quando fechar o bot (Ctrl+C)
     process.on('SIGINT', async () => {
       log("Bot encerrado manualmente.");
-      limparExcelComCabecalho('candidatos.xlsx');
       process.exit();
     });
     
@@ -36,7 +35,7 @@ async function esperarClientPronto(client) {
 
     if (state === "CONNECTED") {
       log("Bot conectado e pronto para uso!");
-      start(client);
+      listenForPdfUploads(client);
       return;
     }
 
@@ -47,68 +46,6 @@ async function esperarClientPronto(client) {
   logErro("Não foi possível conectar completamente após várias tentativas.");
 }
 
-async function start(client) {
-  let workbook;
-  try {
-    workbook = XLSX.readFile('candidatos.xlsx');
-  } catch (err) {
-    logErro("Erro ao ler o arquivo candidatos.xlsx: " + err);
-    return;
-  }
-
-  const sheet_name = workbook.SheetNames[0];
-  const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheet_name]);
-
-  let mensagemBase;
-  try {
-    mensagemBase = fs.readFileSync('config.txt', 'utf8').trim();
-  } catch (err) {
-    logErro("Erro ao ler o config.txt: " + err);
-    return;
-  }
-
-  log(`\n${data.length} contatos carregados.`);
-
-  for (let i = 0; i < data.length; i++) {
-    const contato = data[i];
-
-    if (!contato.Nome || !contato.Numero || !contato.Vaga || !contato.Link) {
-      logErro(`Dados incompletos na linha ${i + 2}. Verifique Nome, Numero, Vaga, Link.`);
-      continue;
-    }
-
-    const nome = contato.Nome;
-    const numero = contato.Numero;
-    const vaga = contato.Vaga;
-    const link = contato.Link;
-
-    const mensagem = mensagemBase
-      .replace(/{nome}/g, nome)
-      .replace(/{vaga}/g, vaga)
-      .replace(/{link}/g, link);
-
-    const chatId = numero + '@c.us';
-
-    try {
-      log(`Enviando mensagem para ${nome} (${numero})...`);
-      const resultado = await client.sendText(chatId, mensagem);
-      log(` Mensagem enviada para ${nome}: ${resultado}`);
-    } catch (err) {
-      logErro(` Erro ao enviar para ${numero}: ${err}`);
-    }
-
-    await delay(5000);
-  }
-
-  log("\n Todas as mensagens foram enviadas!");
-
-  // Limpar Excel após o envio completo
-  limparExcelComCabecalho('candidatos.xlsx');
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function log(msg) {
   console.log(msg);
@@ -120,14 +57,63 @@ function logErro(msg) {
   fs.appendFileSync('erros.txt', msg + "\n");
 }
 
-// Função para limpar mantendo o cabeçalho
-function limparExcelComCabecalho(nomeArquivo) {
-  const cabecalho = [{ Nome: "", Numero: "", Vaga: "", Link: "" }];
-  const ws = XLSX.utils.json_to_sheet(cabecalho);
-  const wb = XLSX.utils.book_new();
-  
-  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  XLSX.writeFile(wb, nomeArquivo);
-  
-  log(` Arquivo ${nomeArquivo} limpo (cabeçalho mantido).`);
+
+async function listenForPdfUploads(client) {
+  const downloadsFolder = path.resolve(__dirname, 'pdf_downloads');
+  fs.mkdirSync(downloadsFolder, { recursive: true });
+
+  await client.onAnyMessage(async (message) => {
+    try {
+      if (message.fromMe) return;
+      if (message.type !== 'document') return;
+
+      const mimetype = (message.mimetype || '').toLowerCase();
+      const filename = (message.filename || message.fileName || '').toLowerCase();
+      if (!mimetype.includes('pdf') && !filename.endsWith('.pdf')) return;
+
+      const base64Data = await client.downloadMedia(message);
+      if (!base64Data) {
+        logErro(`Falha ao baixar mídia do documento recebido de ${message.from}`);
+        return;
+      }
+
+      const rawBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      const fileName = getPdfFileName(message);
+      const filePath = path.join(downloadsFolder, fileName);
+
+      fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
+      log(`PDF salvo: ${filePath} (de ${message.from})`);
+      savePdfMetadata(message, filePath);
+
+      await client.sendText(message.from, 'PDF recebido e salvo com sucesso. Obrigado!');
+    } catch (err) {
+      logErro(`Erro ao processar PDF recebido: ${err}`);
+    }
+  });
+}
+
+function getPdfFileName(message) {
+  const originalName = message.filename || message.fileName || message.caption || '';
+  const safeName = originalName.replace(/[^a-zA-Z0-9-_\.]/g, '_');
+  if (safeName && safeName.toLowerCase().endsWith('.pdf')) {
+    return safeName;
+  }
+
+  const timestamp = message.t || message.timestamp || Date.now();
+  const fromId = message.from ? message.from.replace(/[^a-zA-Z0-9]/g, '_') : 'unknown';
+  return `whatsapp_${fromId}_${timestamp}.pdf`;
+}
+
+function savePdfMetadata(message, filePath) {
+  const metadata = {
+    from: message.from,
+    senderName: message.senderName || message.notifyName || null,
+    timestamp: message.t || message.timestamp || null,
+    mimeType: message.mimetype || null,
+    fileName: message.filename || message.fileName || null,
+    savedPath: filePath,
+    messageId: typeof message.id === 'string' ? message.id : message.id?._serialized || null,
+  };
+
+  fs.appendFileSync('pdf_metadata.log', JSON.stringify(metadata) + '\n');
 }
