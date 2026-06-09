@@ -1,18 +1,27 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const http = require('http');
 const https = require('https');
+const { initializeDatabase } = require('./database/database');
+const { uploadRawResume } = require('./services/raw-resume-service');
 
-const downloadsFolder = path.resolve(__dirname, 'pdf_downloads');
-const dispatchLogFile = path.resolve(__dirname, 'dispatch_log.json');
-const tokenFolderPath = path.resolve(__dirname, '.wwebjs_auth');
+let userDataPath = null;
+let downloadsFolder = path.resolve(__dirname, 'pdf_downloads');
+let dispatchLogFile = path.resolve(__dirname, 'dispatch_log.json');
+let tokenFolderPath = path.resolve(__dirname, '.wwebjs_auth');
 
 let botState = {
   client: null,
   isConnected: false,
 };
+
+function setUserDataPath(userPath) {
+  userDataPath = userPath;
+  downloadsFolder = path.join(userPath, 'pdf_downloads');
+  dispatchLogFile = path.join(userPath, 'dispatch_log.json');
+  tokenFolderPath = path.join(userPath, '.wwebjs_auth');
+}
 
 function ensureDownloadsFolder() {
   fs.mkdirSync(downloadsFolder, { recursive: true });
@@ -30,7 +39,11 @@ function emit(sendEvent, type, payload) {
   }
 }
 
-async function startBot(sendEvent) {
+async function startBot(sendEvent, userDataPathParam) {
+  if (userDataPathParam) {
+    setUserDataPath(userDataPathParam);
+  }
+
   ensureDownloadsFolder();
   ensureTokenFolder();
   emit(sendEvent, 'log', 'Iniciando WhatsApp Web.js...');
@@ -69,7 +82,6 @@ async function startBot(sendEvent) {
 
   client.on('message', async (message) => {
     if (!message.fromMe) {
-      emit(sendEvent, 'log', `[DEBUG] Mensagem recebida - from: ${message.from}, type: ${message.type}`);
       await processDocumentMessage(message, sendEvent);
     }
   });
@@ -206,7 +218,7 @@ function isCurriculoFileName(fileName) {
     normalized.includes('curriculo') ||
     normalized.includes('currículo') ||
     normalized.includes('curriculum') ||
-    /\bcv\b/.test(normalized)
+    /cv/.test(normalized)
   );
 }
 
@@ -315,6 +327,11 @@ function getPdfList() {
     .sort((a, b) => b.modifiedAt - a.modifiedAt);
 }
 
+function getDownloadsFolder() {
+  ensureDownloadsFolder();
+  return downloadsFolder;
+}
+
 async function dispatchSelectedPdfs(fileNames, apiUrl) {
   if (!Array.isArray(fileNames) || fileNames.length === 0) {
     return { success: false, message: 'Nenhum PDF selecionado.' };
@@ -404,9 +421,46 @@ function httpPost(urlString, payload) {
   });
 }
 
-function getDownloadsFolder() {
-  ensureDownloadsFolder();
-  return downloadsFolder;
+async function uploadToDatabase(fileNames) {
+  try {
+    await initializeDatabase();
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    for (const fileName of fileNames) {
+      try {
+        const filePath = path.join(downloadsFolder, fileName);
+        
+        if (!fs.existsSync(filePath)) {
+          errors.push(`${fileName}: arquivo não encontrado`);
+          errorCount++;
+          continue;
+        }
+
+        const fileContent = fs.readFileSync(filePath);
+        await uploadRawResume(fileName, fileContent, 'pending');
+        successCount++;
+      } catch (error) {
+        errors.push(`${fileName}: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Upload concluído: ${successCount} arquivo(s) enviado(s), ${errorCount} erro(s)`,
+      successCount,
+      errorCount,
+      errors,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `Erro ao inicializar banco de dados: ${error.message}`,
+    };
+  }
 }
 
 module.exports = {
@@ -415,4 +469,5 @@ module.exports = {
   dispatchSelectedPdfs,
   getDownloadsFolder,
   scanRecentChats,
+  uploadToDatabase,
 };

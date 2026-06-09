@@ -1,13 +1,11 @@
 const statusLabel = document.getElementById('statusLabel');
-const qrImage = document.getElementById('qrImage');
 const logContainer = document.getElementById('logContainer');
 const pdfListBody = document.getElementById('pdfListBody');
 const refreshButton = document.getElementById('refreshButton');
 const scanChatsButton = document.getElementById('scanChatsButton');
 const scanCountInput = document.getElementById('scanCountInput');
-const sendButton = document.getElementById('sendButton');
 const openFolderButton = document.getElementById('openFolderButton');
-const apiUrlInput = document.getElementById('apiUrl');
+const uploadToDbButton = document.getElementById('uploadToDbButton');
 
 function appendLog(text, type = 'info') {
   const line = document.createElement('div');
@@ -58,12 +56,6 @@ function handleBotEvent(event) {
       setStatus(event.payload);
       appendLog(`Status: ${event.payload.status || JSON.stringify(event.payload)}`);
       break;
-    case 'qr':
-      if (event.payload.base64) {
-        qrImage.src = `data:image/png;base64,${event.payload.base64}`;
-        appendLog('QR code gerado, aponte a câmera do WhatsApp.');
-      }
-      break;
     case 'log':
       appendLog(event.payload);
       break;
@@ -101,21 +93,23 @@ scanChatsButton.addEventListener('click', async () => {
   }
 });
 openFolderButton.addEventListener('click', () => window.electronApi.openPdfFolder());
-sendButton.addEventListener('click', async () => {
+uploadToDbButton.addEventListener('click', async () => {
   const selectedFiles = getSelectedFiles();
   if (!selectedFiles.length) {
-    appendLog('Selecione pelo menos um PDF antes de enviar.', 'warn');
+    appendLog('Selecione pelo menos um PDF antes de fazer upload.', 'warn');
     return;
   }
 
-  const apiUrl = apiUrlInput.value.trim();
-  appendLog(`Enviando ${selectedFiles.length} arquivo(s) para a API...`);
-  const result = await window.electronApi.dispatchSelectedPdfs({ files: selectedFiles, apiUrl });
+  appendLog(`Iniciando upload de ${selectedFiles.length} arquivo(s) para o banco de dados...`);
+  const result = await window.electronApi.uploadToDatabase(selectedFiles);
 
   if (result.success) {
     appendLog(result.message);
+    if (result.errors && result.errors.length > 0) {
+      result.errors.forEach((error) => appendLog(`Erro: ${error}`, 'error'));
+    }
   } else {
-    appendLog(`Falha no envio: ${result.message}`, 'error');
+    appendLog(`Falha no upload: ${result.message}`, 'error');
   }
 });
 

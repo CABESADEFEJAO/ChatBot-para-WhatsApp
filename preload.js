@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('electronApi', {
   dispatchSelectedPdfs: (payload) => ipcRenderer.invoke('dispatchSelectedPdfs', payload),
   scanRecentChats: (chatCount) => ipcRenderer.invoke('scanRecentChats', chatCount),
   openPdfFolder: () => ipcRenderer.invoke('openPdfFolder'),
+  uploadToDatabase: (fileNames) => ipcRenderer.invoke('uploadToDatabase', fileNames),
 });

@@ -47,7 +47,8 @@ function sendBotEvent(event) {
 
 async function startBot() {
   try {
-    await botService.startBot(sendBotEvent);
+    const userDataPath = app.getPath('userData');
+    await botService.startBot(sendBotEvent, userDataPath);
   } catch (err) {
     sendBotEvent({ type: 'error', payload: err?.message || String(err) });
   }
@@ -92,4 +93,15 @@ ipcMain.handle('scanRecentChats', async (event, chatCount) => {
 ipcMain.handle('openPdfFolder', async () => {
   await shell.openPath(botService.getDownloadsFolder());
   return true;
+});
+
+ipcMain.handle('uploadToDatabase', async (event, fileNames) => {
+  try {
+    return await botService.uploadToDatabase(fileNames);
+  } catch (err) {
+    return {
+      success: false,
+      message: err?.message || String(err),
+    };
+  }
 });

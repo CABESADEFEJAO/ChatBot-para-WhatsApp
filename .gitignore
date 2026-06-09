@@ -5,3 +5,5 @@ pdf_metadata.log
 .wwebjs_cache/
 tokens/
 erros.txt
+.env
+dist/
