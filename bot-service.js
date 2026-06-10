@@ -470,4 +470,6 @@ module.exports = {
   getDownloadsFolder,
   scanRecentChats,
   uploadToDatabase,
+  normalizeText,
+  isCurriculoFileName,
 };

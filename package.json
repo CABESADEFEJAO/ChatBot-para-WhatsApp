@@ -6,7 +6,9 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +16,23 @@
   "description": "WhatsApp PDF Scanner - Bot de Download de Currículos",
   "devDependencies": {
     "electron": "^26.0.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "jest": "^30.4.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "database/**/*.js",
+      "services/**/*.js",
+      "bot-service.js"
+    ],
+    "testMatch": [
+      "**/tests/unit/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ]
   },
   "dependencies": {
     "dotenv": "^17.4.2",
